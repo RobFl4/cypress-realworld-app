@@ -16,6 +16,7 @@ const { _ } = Cypress;
 type TransactionFeedsCtx = {
   allUsers?: User[];
   user?: User;
+  contactIds?: string[];
 };
 
 describe("Transaction Feed", function () {
@@ -46,6 +47,7 @@ describe("Transaction Feed", function () {
     cy.task("db:seed");
 
     cy.server();
+    cy.route("GET", "/notifications").as("notifications");
     cy.route("/transactions*").as(feedViews.personal.routeAlias);
     cy.route("/transactions/public*").as(feedViews.public.routeAlias);
     cy.route("/transactions/contacts*").as(feedViews.contacts.routeAlias);
@@ -59,19 +61,26 @@ describe("Transaction Feed", function () {
   });
   describe("app layout and responsiveness", function () {
     it("toggles the navigation drawer", function () {
+      cy.wait("@notifications");
       if (isMobile()) {
         cy.getBySel("sidenav-home").should("not.be.visible");
+        cy.percySnapshot("Mobile Initial Side Navigation Not Visible");
         cy.getBySel("sidenav-toggle").click();
         cy.getBySel("sidenav-home").should("be.visible");
+        cy.percySnapshot("Mobile Toggle Side Navigation Visible");
         cy.get(".MuiBackdrop-root").click({ force: true });
         cy.getBySel("sidenav-home").should("not.be.visible");
+        cy.percySnapshot("Mobile Home Link Side Navigation Not Visible");
 
         cy.getBySel("sidenav-toggle").click();
         cy.getBySel("sidenav-home").click().should("not.be.visible");
+        cy.percySnapshot("Mobile Toggle Side Navigation Not Visible");
       } else {
         cy.getBySel("sidenav-home").should("be.visible");
+        cy.percySnapshot("Desktop Side Navigation Visible");
         cy.getBySel("sidenav-toggle").click();
         cy.getBySel("sidenav-home").should("not.be.visible");
+        cy.percySnapshot("Desktop Side Navigation Not Visible");
       }
     });
   });
@@ -83,6 +92,7 @@ describe("Transaction Feed", function () {
       );
       cy.visit("/");
 
+      cy.wait("@notifications");
       cy.wait("@mockedPublicTransactions")
         .its("response.body.results")
         .then((transactions) => {
@@ -152,6 +162,7 @@ describe("Transaction Feed", function () {
               .should("contain", `+${formattedAmount}`)
               .should("have.css", "color", "rgb(76, 175, 80)");
           });
+          cy.percySnapshot("Transaction Item");
         });
     });
 
@@ -162,6 +173,8 @@ describe("Transaction Feed", function () {
           .should("have.class", "Mui-selected")
           .contains(feed.tabLabel, { matchCase: false })
           .should("have.css", { "text-transform": "uppercase" });
+        cy.getBySel("list-skeleton").should("not.be.visible");
+        cy.percySnapshot(`Paginate ${feedName}`);
 
         cy.wait(`@${feed.routeAlias}`)
           .its("response.body.results")
@@ -180,6 +193,7 @@ describe("Transaction Feed", function () {
           .then(({ results, pageData }) => {
             expect(results).have.length(Cypress.env("paginationPageSize"));
             expect(pageData.page).to.equal(2);
+            cy.percySnapshot(`Paginate ${feedName} Next Page`);
             cy.nextTransactionFeedPage(feed.service, pageData.totalPages);
           });
 
@@ -189,6 +203,7 @@ describe("Transaction Feed", function () {
             expect(results).to.have.length.least(1);
             expect(pageData.page).to.equal(pageData.totalPages);
             expect(pageData.hasNextPages).to.equal(false);
+            cy.percySnapshot(`Paginate ${feedName} Last Page`);
           });
       });
     });
@@ -199,8 +214,10 @@ describe("Transaction Feed", function () {
       it("closes date range picker modal", () => {
         cy.getBySelLike("filter-date-range-button").click({ force: true });
         cy.get(".Cal__Header__root").should("be.visible");
+        cy.percySnapshot("Mobile Open Date Range Picker");
         cy.getBySel("date-range-filter-drawer-close").click();
         cy.get(".Cal__Header__root").should("not.be.visible");
+        cy.percySnapshot("Mobile Close Date Range Picker");
       });
     }
 
@@ -221,6 +238,7 @@ describe("Transaction Feed", function () {
             .then((transactions: Transaction[]) => {
               cy.getBySelLike("transaction-item").should("have.length", transactions.length);
 
+              cy.percySnapshot("Date Range Filtered Transactions");
               transactions.forEach(({ createdAt }) => {
                 const createdAtDate = startOfDayUTC(new Date(createdAt));
 
@@ -246,6 +264,7 @@ describe("Transaction Feed", function () {
               .its("response.body.results")
               .should("deep.equal", unfilteredResults);
           });
+          cy.percySnapshot("Unfiltered Transactions");
         });
       });
 
@@ -265,6 +284,7 @@ describe("Transaction Feed", function () {
           .should("have.attr", "href", "/transaction/new")
           .contains("create a transaction", { matchCase: false })
           .should("have.css", { "text-transform": "uppercase" });
+        cy.percySnapshot("No Transactions");
       });
     });
   });
@@ -299,6 +319,7 @@ describe("Transaction Feed", function () {
           expect(urlParams.get("amountMin")).to.equal(`${rawAmountMin}`);
           expect(urlParams.get("amountMax")).to.equal(`${rawAmountMax}`);
 
+          cy.percySnapshot("Amount Range Filtered Transactions");
           transactions.forEach(({ amount }) => {
             expect(amount).to.be.within(rawAmountMin, rawAmountMax);
           });
@@ -309,6 +330,7 @@ describe("Transaction Feed", function () {
           cy.wait(`@${feed.routeAlias}`)
             .its("response.body.results")
             .should("deep.equal", unfilteredResults);
+          cy.percySnapshot("Unfiltered Transactions");
         });
 
         if (isMobile()) {
@@ -336,6 +358,7 @@ describe("Transaction Feed", function () {
           .should("have.attr", "href", "/transaction/new")
           .contains("create a transaction", { matchCase: false })
           .should("have.css", { "text-transform": "uppercase" });
+        cy.percySnapshot("No Transactions");
       });
     });
   });
@@ -343,53 +366,56 @@ describe("Transaction Feed", function () {
   describe("Feed Item Visibility", () => {
     it("mine feed only shows personal transactions", function () {
       cy.database("filter", "contacts", { userId: ctx.user!.id }).then((contacts: Contact[]) => {
-        cy.visit("/personal");
-
-        cy.wait("@personalTransactions")
-          .its("response.body.results")
-          .each((transaction: Transaction) => {
-            const transactionParticipants = [transaction.senderId, transaction.receiverId];
-            expect(transactionParticipants).to.include(ctx.user!.id);
-          });
+        ctx.contactIds = contacts.map((contact) => contact.contactUserId);
       });
-    });
 
-    it("friends feed only shows contact transactions", function () {
-      cy.database("filter", "contacts", { userId: ctx.user!.id }).then((contacts: Contact[]) => {
-        const contactIds = contacts.map((contact) => contact.contactUserId);
-        cy.visit("/contacts");
+      cy.getBySelLike(feedViews.personal.tab).click();
 
-        cy.wait("@contactsTransactions")
-          .its("response.body.results")
-          .each((transaction: Transaction) => {
-            const transactionParticipants = [transaction.senderId, transaction.receiverId];
-
-            const contactsInTransaction = _.intersection(contactIds, transactionParticipants);
-
-            const message = `"${contactsInTransaction}" are contacts of ${ctx.user!.id}`;
-            expect(contactsInTransaction, message).to.not.be.empty;
-          });
-      });
+      cy.wait("@personalTransactions")
+        .its("response.body.results")
+        .each((transaction: Transaction) => {
+          const transactionParticipants = [transaction.senderId, transaction.receiverId];
+          expect(transactionParticipants).to.include(ctx.user!.id);
+        });
+      cy.percySnapshot("Personal Transactions");
     });
 
     it("first five items belong to contacts in public feed", function () {
       cy.database("filter", "contacts", { userId: ctx.user!.id }).then((contacts: Contact[]) => {
-        const contactIds = contacts.map((contact) => contact.contactUserId);
-
-        cy.wait("@publicTransactions")
-          .its("response.body.results")
-          .then((transactions: TransactionResponseItem[]) => {
-            const transactionsOfContacts = transactions.slice(0, 5);
-
-            transactionsOfContacts.forEach((transaction) => {
-              const transactionParticipants = [transaction.senderId, transaction.receiverId];
-
-              const contactsInTransaction = _.intersection(transactionParticipants, contactIds);
-              const message = `"${contactsInTransaction}" are contacts of ${ctx.user!.id}`;
-              expect(contactsInTransaction, message).to.not.be.empty;
-            });
-          });
+        ctx.contactIds = contacts.map((contact) => contact.contactUserId);
       });
+
+      cy.wait("@publicTransactions")
+        .its("response.body.results")
+        .invoke("slice", 0, 5)
+        .each((transaction: Transaction) => {
+          const transactionParticipants = [transaction.senderId, transaction.receiverId];
+
+          const contactsInTransaction = _.intersection(transactionParticipants, ctx.contactIds!);
+          const message = `"${contactsInTransaction}" are contacts of ${ctx.user!.id}`;
+          expect(contactsInTransaction, message).to.not.be.empty;
+        });
+      cy.percySnapshot("First 5 Transaction Items belong to contacts");
+    });
+
+    it("friends feed only shows contact transactions", function () {
+      cy.database("filter", "contacts", { userId: ctx.user!.id }).then((contacts: Contact[]) => {
+        ctx.contactIds = contacts.map((contact) => contact.contactUserId);
+      });
+
+      cy.getBySelLike(feedViews.contacts.tab).click();
+
+      cy.wait("@contactsTransactions")
+        .its("response.body.results")
+        .each((transaction: Transaction) => {
+          const transactionParticipants = [transaction.senderId, transaction.receiverId];
+
+          const contactsInTransaction = _.intersection(ctx.contactIds!, transactionParticipants);
+
+          const message = `"${contactsInTransaction}" are contacts of ${ctx.user!.id}`;
+          expect(contactsInTransaction, message).to.not.be.empty;
+        });
+      cy.percySnapshot("Friends Feed only shows contacts transactions");
     });
   });
 });

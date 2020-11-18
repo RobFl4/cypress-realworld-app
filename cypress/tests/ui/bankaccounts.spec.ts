@@ -14,6 +14,7 @@ describe("Bank Accounts", function () {
     cy.server();
     cy.route("POST", "/bankAccounts").as("createBankAccount");
     cy.route("DELETE", "/bankAccounts/*").as("deleteBankAccount");
+    cy.route("GET", "/notifications").as("getNotifications");
 
     cy.database("find", "users").then((user: User) => {
       ctx.user = user;
@@ -23,6 +24,7 @@ describe("Bank Accounts", function () {
   });
 
   it("creates a new bank account", function () {
+    cy.wait("@getNotifications");
     if (isMobile()) {
       cy.getBySel("sidenav-toggle").click();
     }
@@ -30,11 +32,13 @@ describe("Bank Accounts", function () {
     cy.getBySel("sidenav-bankaccounts").click();
 
     cy.getBySel("bankaccount-new").click();
-    cy.location("pathname").should("be", "/bankaccounts/new");
+    cy.location("pathname").should("eq", "/bankaccounts/new");
+    cy.percySnapshot("Display New Bank Account Form");
 
     cy.getBySelLike("bankName-input").type("The Best Bank");
     cy.getBySelLike("routingNumber-input").type("987654321");
     cy.getBySelLike("accountNumber-input").type("123456789");
+    cy.percySnapshot("Fill out New Bank Account Form");
     cy.getBySelLike("submit").click();
 
     cy.wait("@createBankAccount");
@@ -43,6 +47,7 @@ describe("Bank Accounts", function () {
       .should("have.length", 2)
       .eq(1)
       .should("contain", "The Best Bank");
+    cy.percySnapshot("Bank Account Created");
   });
 
   it("should display bank account form errors", function () {
@@ -59,26 +64,63 @@ describe("Bank Accounts", function () {
       .should("be.visible")
       .and("contain", "Must contain at least 5 characters");
 
-    ["routing", "account"].forEach((field) => {
-      cy.getBySelLike(`${field}Number-input`).type("123").find("input").clear().blur();
-      cy.get(`#bankaccount-${field}Number-input-helper-text`)
-        .should("be.visible")
-        .and("contain", `Enter a valid bank ${field} number`);
+    /** Routing number input validations **/
+    // Required field
+    cy.getBySelLike("routingNumber-input").find("input").focus().blur();
+    cy.get(`#bankaccount-routingNumber-input-helper-text`)
+      .should("be.visible")
+      .and("contain", "Enter a valid bank routing number");
 
-      cy.getBySelLike(`${field}Number-input`).type("12345678").find("input").blur();
-      cy.get(`#bankaccount-${field}Number-input-helper-text`)
-        .should("be.visible")
-        .and("contain", `Must contain a valid ${field} number`);
-    });
+    // Min 9 digit
+    cy.getBySelLike("routingNumber-input").type("12345678").find("input").blur();
+    cy.get("#bankaccount-routingNumber-input-helper-text")
+      .should("be.visible")
+      .and("contain", "Must contain a valid routing number");
+    cy.getBySelLike("routingNumber-input").find("input").clear();
+
+    cy.getBySelLike("routingNumber-input").type("123456789").find("input").blur();
+    cy.get("#bankaccount-routingNumber-input-helper-text").should("not.be.visible");
+
+    /** Account number input validations **/
+    // Required field
+    cy.getBySelLike("accountNumber-input").find("input").focus().blur();
+    cy.get(`#bankaccount-accountNumber-input-helper-text`)
+      .should("be.visible")
+      .and("contain", "Enter a valid bank account number");
+
+    // Min 9 digit
+    cy.getBySelLike("accountNumber-input").type("12345678").find("input").blur();
+    cy.get("#bankaccount-accountNumber-input-helper-text")
+      .should("be.visible")
+      .and("contain", "Must contain at least 9 digits");
+    cy.getBySelLike("accountNumber-input").find("input").clear();
+
+    cy.getBySelLike("accountNumber-input").type("123456789").find("input").blur();
+    cy.get("#bankaccount-accountNumber-input-helper-text").should("not.be.visible");
+    cy.getBySelLike("accountNumber-input").find("input").clear();
+
+
+    // Max 12 gdigit
+    cy.getBySelLike("accountNumber-input").type("123456789111").find("input").blur();
+    cy.get("#bankaccount-accountNumber-input-helper-text").should("not.be.visible");
+    cy.getBySelLike("accountNumber-input").find("input").clear();
+
+    cy.getBySelLike("accountNumber-input").type("1234567891111").find("input").blur();
+    cy.get("#bankaccount-accountNumber-input-helper-text")
+      .should("be.visible")
+      .and("contain", "Must contain no more than 12 digits");
 
     cy.getBySel("bankaccount-submit").should("be.disabled");
+    cy.percySnapshot("Bank Account Form with Errors and Submit button disabled");
   });
 
   it("soft deletes a bank account", function () {
     cy.visit("/bankaccounts");
     cy.getBySelLike("delete").first().click();
+
     cy.wait("@deleteBankAccount");
     cy.getBySelLike("list-item").children().contains("Deleted");
+    cy.percySnapshot("Soft Delete Bank Account");
   });
 
   // TODO: [enhancement] the onboarding modal assertion can be removed after adding "onboarded" flag to user profile
@@ -91,5 +133,6 @@ describe("Bank Accounts", function () {
     cy.getBySel("bankaccount-list").should("not.be.visible");
     cy.getBySel("empty-list-header").should("contain", "No Bank Accounts");
     cy.getBySel("user-onboarding-dialog").should("be.visible");
+    cy.percySnapshot("User Onboarding Dialog is Visible");
   });
 });

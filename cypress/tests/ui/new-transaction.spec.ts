@@ -44,11 +44,14 @@ describe("New Transaction", function () {
 
     cy.getBySel("user-list-search-input").type(ctx.contact!.firstName, { force: true });
     cy.wait("@usersSearch");
+    cy.percySnapshot("User Search First Name Input");
 
     cy.getBySelLike("user-list-item").contains(ctx.contact!.firstName).click({ force: true });
+    cy.percySnapshot("User Search First Name List Item");
 
     cy.getBySelLike("amount-input").type(payment.amount);
     cy.getBySelLike("description-input").type(payment.description);
+    cy.percySnapshot("Amount and Description Input");
     cy.getBySelLike("submit-payment").click();
     cy.wait(["@createTransaction", "@getUserProfile"]);
     cy.getBySel("alert-bar-success")
@@ -64,6 +67,7 @@ describe("New Transaction", function () {
     }
 
     cy.getBySelLike("user-balance").should("contain", updatedAccountBalance);
+    cy.percySnapshot("Updated User Balance");
 
     if (isMobile()) {
       cy.get(".MuiBackdrop-root").click({ force: true });
@@ -79,6 +83,7 @@ describe("New Transaction", function () {
     cy.database("find", "users", { id: ctx.contact!.id })
       .its("balance")
       .should("equal", ctx.contact!.balance + parseInt(payment.amount) * 100);
+    cy.percySnapshot("Personal List Validate Transaction in List");
   });
 
   it("navigates to the new transaction form, selects a user and submits a transaction request", function () {
@@ -91,19 +96,23 @@ describe("New Transaction", function () {
     cy.wait("@allUsers");
 
     cy.getBySelLike("user-list-item").contains(ctx.contact!.firstName).click({ force: true });
+    cy.percySnapshot("User Search First Name Input");
 
     cy.getBySelLike("amount-input").type(request.amount);
     cy.getBySelLike("description-input").type(request.description);
+    cy.percySnapshot("Amount and Description Input");
     cy.getBySelLike("submit-request").click();
     cy.wait("@createTransaction");
     cy.getBySel("alert-bar-success")
       .should("be.visible")
       .and("have.text", "Transaction Submitted!");
+    cy.percySnapshot("Transaction Request Submitted Notification");
 
     cy.getBySelLike("return-to-transactions").click();
     cy.getBySelLike("personal-tab").click().should("have.class", "Mui-selected");
 
     cy.getBySelLike("transaction-item").should("contain", request.description);
+    cy.percySnapshot("Transaction Item Description in List");
   });
 
   it("displays new transaction errors", function () {
@@ -124,6 +133,7 @@ describe("New Transaction", function () {
 
     cy.getBySelLike("submit-request").should("be.disabled");
     cy.getBySelLike("submit-payment").should("be.disabled");
+    cy.percySnapshot("New Transaction Errors with Submit Payment/Request Buttons Disabled");
   });
 
   it("submits a transaction payment and verifies the deposit for the receiver", function () {
@@ -137,8 +147,33 @@ describe("New Transaction", function () {
       receiver: ctx.contact,
     };
 
+    // first let's grab the current balance from the UI
+    let startBalance: string;
+    if (!isMobile()) {
+      // only check the balance display in desktop resolution
+      // as it is NOT shown on mobile screen
+      cy.get("[data-test=sidenav-user-balance]")
+        .invoke("text")
+        .then((x) => {
+          startBalance = x; // something like "$1,484.81"
+          expect(startBalance).to.match(/\$\d/);
+        });
+    }
+
     cy.createTransaction(transactionPayload);
     cy.wait("@createTransaction");
+    cy.getBySel("new-transaction-create-another-transaction").should("be.visible");
+
+    if (!isMobile()) {
+      // make sure the new balance is displayed
+      cy.get("[data-test=sidenav-user-balance]").should(($el) => {
+        // here we only make sure the text has changed
+        // we could also convert the balance to actual number
+        // and confirm the new balance is the start balance - amount
+        expect($el.text()).to.not.equal(startBalance);
+      });
+    }
+    cy.percySnapshot("Transaction Payment Submitted Notification");
 
     cy.switchUser(ctx.contact!.username);
 
@@ -151,6 +186,7 @@ describe("New Transaction", function () {
     }
 
     cy.getBySelLike("user-balance").should("contain", updatedAccountBalance);
+    cy.percySnapshot("Verify Updated Sender Account Balance");
   });
 
   it("submits a transaction request and accepts the request for the receiver", function () {
@@ -165,6 +201,8 @@ describe("New Transaction", function () {
     cy.getBySelLike("new-transaction").click();
     cy.createTransaction(transactionPayload);
     cy.wait("@createTransaction");
+    cy.getBySel("new-transaction-create-another-transaction").should("be.visible");
+    cy.percySnapshot("receiver - Transaction Payment Submitted Notification");
 
     cy.switchUser(ctx.contact!.username);
 
@@ -176,9 +214,16 @@ describe("New Transaction", function () {
       .first()
       .should("contain", transactionPayload.description)
       .click({ force: true });
+    cy.percySnapshot("Navigate to Transaction Item");
 
     cy.getBySelLike("accept-request").click();
     cy.wait("@updateTransaction").its("status").should("equal", 204);
+    cy.getBySelLike("transaction-detail-header").should("be.visible");
+    cy.getBySelLike("transaction-amount").should("be.visible");
+    cy.getBySelLike("sender-avatar").should("be.visible");
+    cy.getBySelLike("receiver-avatar").should("be.visible");
+    cy.getBySelLike("transaction-description").should("be.visible");
+    cy.percySnapshot("Accept Transaction Request");
 
     cy.switchUser(ctx.user!.username);
 
@@ -191,10 +236,10 @@ describe("New Transaction", function () {
     }
 
     cy.getBySelLike("user-balance").should("contain", updatedAccountBalance);
+    cy.percySnapshot("Verify Updated Sender Account Balance");
   });
 
-  it("searches for a user by attributes", function () {
-    const targetUser = ctx.allUsers![2];
+  context("searches for a user by attribute", function () {
     const searchAttrs: (keyof User)[] = [
       "firstName",
       "lastName",
@@ -203,19 +248,36 @@ describe("New Transaction", function () {
       "phoneNumber",
     ];
 
-    cy.getBySelLike("new-transaction").click();
-    cy.wait("@allUsers");
+    beforeEach(function () {
+      cy.getBySelLike("new-transaction").click();
+      cy.wait("@allUsers");
+    });
 
     searchAttrs.forEach((attr: keyof User) => {
-      cy.getBySel("user-list-search-input").type(targetUser[attr] as string, { force: true });
-      cy.wait("@usersSearch");
+      it(attr, function () {
+        const targetUser = ctx.allUsers![2];
 
-      cy.getBySelLike("user-list-item")
-        .first()
-        .contains(targetUser[attr] as string);
+        cy.log(`Searching by **${attr}**`);
+        cy.getBySel("user-list-search-input").type(targetUser[attr] as string, { force: true });
+        cy.wait("@usersSearch")
+          // make sure the backend returns some results
+          .its("responseBody.results.length")
+          .should("be.gt", 0)
+          .then((resultsN) => {
+            cy.getBySelLike("user-list-item")
+              // make sure the list of results is fully updated
+              // and shows the number of results returned from the backend
+              .should("have.length", resultsN)
+              .first()
+              .contains(targetUser[attr] as string);
+          });
 
-      cy.focused().clear();
-      cy.getBySel("users-list").should("be.empty");
+        cy.percySnapshot(`User List for Search: ${attr} = ${targetUser[attr]}`);
+
+        cy.focused().clear();
+        cy.getBySel("users-list").should("be.empty");
+        cy.percySnapshot("User List Clear Search");
+      });
     });
   });
 });

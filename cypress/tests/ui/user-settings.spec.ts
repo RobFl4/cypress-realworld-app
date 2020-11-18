@@ -7,6 +7,7 @@ describe("User Settings", function () {
 
     cy.server();
     cy.route("PATCH", "/users/*").as("updateUser");
+    cy.route("GET", "/notifications").as("getNotifications");
 
     cy.database("find", "users").then((user: User) => {
       cy.loginByXstate(user.username);
@@ -20,8 +21,11 @@ describe("User Settings", function () {
   });
 
   it("renders the user settings form", function () {
+    cy.wait("@getNotifications");
     cy.getBySel("user-settings-form").should("be.visible");
     cy.location("pathname").should("include", "/user/settings");
+
+    cy.percySnapshot("User Settings Form");
   });
 
   it("should display user setting form errors", function () {
@@ -53,6 +57,7 @@ describe("User Settings", function () {
       .and("contain", "Phone number is not valid");
 
     cy.getBySelLike("submit").should("be.disabled");
+    cy.percySnapshot("User Settings Form Errors and Submit Disabled");
   });
 
   it("updates first name, last name, email and phone number", function () {
@@ -65,5 +70,12 @@ describe("User Settings", function () {
     cy.getBySelLike("submit").click();
 
     cy.wait("@updateUser").its("status").should("equal", 204);
+
+    if (isMobile()) {
+      cy.getBySel("sidenav-toggle").click();
+    }
+
+    cy.getBySel("sidenav-user-full-name").should("contain", "New First Name");
+    cy.percySnapshot("User Settings Update Profile");
   });
 });
