@@ -12,5 +12,6 @@
     "codeCoverage": {
       "url": "http://localhost:3001/__coverage__"
     }
-  }
+  },
+  "numTestsKeptInMemory": 30
 }
