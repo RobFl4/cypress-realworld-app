@@ -10,7 +10,7 @@ pipeline {
         stage('Testing') {
             steps {
                 echo 'Testing..'
-                sh 'npm run cypress'
+                sh 'ls -l'
             }
         }
         stage('Deploying') {
