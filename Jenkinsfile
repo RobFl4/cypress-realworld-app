@@ -10,7 +10,7 @@ pipeline {
         stage('Testing') {
             steps {
                 echo 'Testing..'
-                yarn cypress:run
+                sh 'yarn cypress:run'
             }
         }
         stage('Deploying') {
