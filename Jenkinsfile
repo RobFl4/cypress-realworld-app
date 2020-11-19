@@ -10,7 +10,7 @@ pipeline {
         stage('Testing') {
             steps {
                 echo 'Testing..'
-                nohup 'ls -l' &
+                sh "DISPLAY= xvfb-run -a ./node_modules/.bin/cypress run "
             }
         }
         stage('Deploying') {
