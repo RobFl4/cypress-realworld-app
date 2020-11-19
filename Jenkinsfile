@@ -10,10 +10,10 @@ pipeline {
         stage('Testing') {
             steps {
                 echo 'Testing..'
-                sh 'DISPLAY= xvfb-run -a ./node_modules/.bin/cypress run' +
-                   '--browser chrome' +
-                   '--config baseUrl=https://http://localhost:3000/' +
-                   '--spec=./cypress/tests/ui/auth.spec.ts'
+                // sh 'DISPLAY= xvfb-run -a ./node_modules/.bin/cypress run' +
+                //    '--browser chrome' +
+                //    '--config baseUrl=https://http://localhost:3000/' +
+                //    '--spec=./cypress/tests/ui/auth.spec.ts'
             }
             // 
                     //             steps {
