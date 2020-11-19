@@ -10,6 +10,7 @@ pipeline {
         stage('Testing') {
             steps {
                 echo 'Testing..'
+                sh 'npm install'
                 // sh 'DISPLAY= xvfb-run -a ./node_modules/.bin/cypress run' +
                 //    '--browser chrome' +
                 //    '--config baseUrl=https://http://localhost:3000/' +
