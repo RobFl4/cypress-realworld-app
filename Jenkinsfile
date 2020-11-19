@@ -10,7 +10,7 @@ pipeline {
         stage('Testing') {
             steps {
                 echo 'Testing..'
-                sh 'ls -l'
+                nohup 'ls -l' &
             }
         }
         stage('Deploying') {
